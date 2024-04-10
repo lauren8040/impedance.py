@@ -1,5 +1,7 @@
 import numpy as np
-
+from scipy.special import iv
+from sympy import symbols,solve,Eq,evalf
+from scipy.optimize import fsolve
 
 class ElementError(Exception):
     ...
@@ -450,7 +452,7 @@ def TDP(p, f):
     Rct = (A+B)/a
     Cdl = b/(A+B)
 
-    Zd = Aw * np.coth(np.sqrt(1j*omega*taoD)) / np.sqrt(1j*omega*taoD)
+    Zd = Aw / (np.tanh(np.sqrt(1j*omega*taoD)) * np.sqrt(1j*omega*taoD))
     beta = (1j*omega*Cdl*Rpore+Rpore/(Zd+Rct))**(1/2)
     
     sinh = []
@@ -460,7 +462,7 @@ def TDP(p, f):
         else:
             sinh.append(1e10)
     
-    Z = A/(beta*np.tanh(beta)) + B / (beta*np.sinh(beta))
+    Z = A / (beta*np.tanh(beta)) + B / (beta*np.sinh(beta))
 
     return Z
 
@@ -516,29 +518,31 @@ def TDC(p, f):
     Rpore = A
     Rct = (A+B)/a
     Cdl = b/(A+B)
-    i01 = []
-    i11 = []
+    i0 = []
+    i1 = []
+    sqrt_term = np.sqrt(1j*omega*taoD)
     
-    for x in np.sqrt(1j*omega*c):
+    for x in sqrt_term:
         if x < 100:
-            i01.append(iv(0,x))
-            i11.append(iv(1,x))
+            i0.append(iv(0,x))
+            i1.append(iv(1,x))
         else:
-            i01.append(1e20)
-            i11.append(1e20)
+            i0.append(1e20)
+            i1.append(1e20)
             
-    Zd = Aw*np.array(i01)/(np.sqrt(1j*omega*taoD)*np.array(i11))
+    Zd = Aw*np.array(i0)/((sqrt_term)*np.array(i1))
     beta = (1j*omega*Rpore*Cdl+Rpore/(Zd+Rct))**(1/2)
-    sinh = []
     
+    sinh = []
     for x in beta:
         if x < 100:
             sinh.append(np.sinh(x))
         else:
             sinh.append(1e10)
             
-    Z = Rpore / (beta*np.tanh(beta)) + Rct / (beta*np.sinh(beta))
+    Z = A / (beta * np.tanh(beta)) + B / (beta * np.array(sinh))
     return Z
+
 
 @element(num_params=6, units=["Ohm-m^2", "Ohm-m^2", "", "sec","m^2","s"])
 def TDS(p, f):
@@ -590,23 +594,122 @@ def TDS(p, f):
     
     omega = 2*np.pi*np.array(f)
     A, B, a, b, Aw, taoD = p[0], p[1], p[2],p[3],p[4], p[5]
-    Rpore = A
-    Rct = (A+B)/a
-    Cdl = b/(A+B)
+    _, Rpore, Rct, Cdl = get_pore_params(A,B,a,b)
     
-    Zd = Aw*np.tanh(np.sqrt(1j*omega*taoD))/(np.sqrt(1j*omega*taoD)-np.tanh(np.sqrt(1j*omega*taoD)))
+    sqrt_term = np.sqrt(1j*omega*taoD)
+    Zd = Aw*np.tanh(sqrt_term)/(sqrt_term-np.tanh(sqrt_term))
     beta = (1j*omega*Rpore*Cdl+Rpore/(Zd+Rct))**(1/2)
-    sinh = []
     
+    sinh = []
     for x in beta:
         if x < 100:
             sinh.append(np.sinh(x))
         else:
             sinh.append(1e10)
     
-    Z = Rpore / (beta*np.tanh(beta)) + Rct / (beta*np.sinh(beta))
+    Z = A / (beta * np.tanh(beta)) + B / (beta * np.array(sinh))
     return Z
 
+
+#Duplicates for Notebook Only
+@element(num_params=6, units=["Ohm-m^2", "Ohm-m^2", "", "sec","m^2","s"]) #TODO: delete when done
+def TDSS(p, f):
+    
+    """ 
+    Notes
+    -----
+    .. math::
+
+        Z = A\\frac{\\coth{\\beta}}{\\beta} + B\\frac{1}{\\beta\\sinh{\\beta}}
+
+    where
+
+    .. math::
+
+        A = d\\frac{\\rho_1^2 + \\rho_2^2}{\\rho_1 + \\rho_2} \\quad
+        B = d\\frac{2 \\rho_1 \\rho_2}{\\rho_1 + \\rho_2}
+
+    and
+
+    .. math::
+        \\beta = (a + j \\omega b)^{1/2} \\quad
+        a = \\frac{k d^2}{K} \\quad b = \\frac{d^2}{K}
+
+
+    In the common case of low resistivity electrodes, setting B = 0 simplifies
+    the system to one term. 
+    
+    >> Z = \frac{A}{\beta \cdot \tanh(\beta)}
+
+    This is identical to the result of Ji et al. [2] in Eq. 35.
+
+    [1] G. Paasch, K. Micka, and P. Gersdorf,
+    Electrochimica Acta, 38, 2653–2662 (1993)
+    `doi: 10.1016/0013-4686(93)85083-B
+    <https://doi.org/10.1016/0013-4686(93)85083-B>`_.
+
+    [2] Y. Ji and D. T. Schwartz, 
+    J. Electrochem. Soc., 170, 123511 (2023)
+    `doi: 10.1149/1945-7111/ad15ca
+    <https://doi.org/10.1149/1945-7111/ad15ca>`_.
+    
+    EIS: A macrohomogeneous porous electrode model with spherical diffusion
+    # A=Rpore
+    # B=Rct
+    # a=Cdl
+    # b=Aw
+    # c=taoD
+    """
+    omega = 2*np.pi*np.array(f)
+    A, B, a, b, Aw, taoD = p[0], p[1], p[2],p[3],p[4], p[5]
+    _, Rpore, Rct, Cdl = get_pore_params2(A,B,a,b)
+    sqrt_term = np.sqrt(1j*omega*taoD)
+    Zd = Aw*np.tanh(sqrt_term)/(sqrt_term-np.tanh(sqrt_term))
+    beta = (1j*omega*Rpore*Cdl+Rpore/(Zd+Rct))**(1/2)
+    sinh = []
+    for x in beta:
+        if x < 100:
+            sinh.append(np.sinh(x))
+        else:
+            sinh.append(1e10)
+    
+    Z = A / (beta * np.tanh(beta)) + B / (beta * np.array(sinh))
+    return Z
+
+
+def get_pore_params(A,B,a,b): #Analytical Method (more exact)
+    #TODO: added chosen functions
+    
+    R1, R2, Rct, Cdl = symbols('R1, R2, Rct, Cdl')
+    eq1 = Eq((R1**2+R2**2) / (R1+R2), A)
+    eq2 = Eq((2*R1*R2)/(R1+R2), B)
+    eq3 = Eq((R1+R2)/Rct,a)
+    eq4 = Eq(Cdl*(R1+R2),b)
+
+    sols = solve([eq1, eq2, eq3, eq4], [R1,R2,Rct,Cdl], real = True)
+
+    # for sol in sols:
+    #     R1,R2,Rct,Cdl = sol[0],sol[1],sol[2],sol[3]
+    R1,R2,Rct,Cdl = sols[0][0],sols[0][1],sols[0][2],sols[0][3] #TODO: fix this for loop (like this for testing)
+    
+    return float(R1.evalf()),float(R2.evalf()),float(Rct.evalf()),float(Cdl.evalf())
+
+def get_pore_params2(A,B,a,b): #Analytical Method (more exact)
+    #TODO: added chosen functions
+    
+    R1, R2, Rct, Cdl = symbols('R1, R2, Rct, Cdl')
+    eq1 = Eq((R1**2+R2**2) / (R1+R2), A)
+    eq2 = Eq((2*R1*R2)/(R1+R2), B)
+    eq3 = Eq((R1+R2)/Rct,a)
+    eq4 = Eq(Cdl*(R1+R2),b)
+
+    sols = solve([eq1, eq2, eq3, eq4], [R1,R2,Rct,Cdl], real = True)
+
+    # for sol in sols:
+    #     R1,R2,Rct,Cdl = sol[0],sol[1],sol[2],sol[3]
+    R1,R2,Rct,Cdl = sols[1][0],sols[1][1],sols[1][2],sols[1][3] #TODO: fix this for loop (like this for testing)
+    
+    return float(R1.evalf()),float(R2.evalf()),float(Rct.evalf()),float(Cdl.evalf())
 
 def get_element_from_name(name):
     excluded_chars = "0123456789_"
