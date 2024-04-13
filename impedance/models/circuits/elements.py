@@ -448,9 +448,7 @@ def TDP(p, f):
     """
     omega = 2*np.pi*np.array(f)
     A, B, a, b, Aw, taoD = p[0], p[1], p[2],p[3],p[4], p[5]
-    Rpore = A
-    Rct = (A+B)/a
-    Cdl = b/(A+B)
+    _, Rpore, Rct, Cdl = get_pore_params(A,B,a,b)
 
     Zd = Aw / (np.tanh(np.sqrt(1j*omega*taoD)) * np.sqrt(1j*omega*taoD))
     beta = (1j*omega*Cdl*Rpore+Rpore/(Zd+Rct))**(1/2)
@@ -462,7 +460,7 @@ def TDP(p, f):
         else:
             sinh.append(1e10)
     
-    Z = A / (beta*np.tanh(beta)) + B / (beta*np.sinh(beta))
+    Z = A / (beta * np.tanh(beta)) + B / (beta * np.array(sinh))
 
     return Z
 
@@ -515,9 +513,7 @@ def TDC(p, f):
     """
     omega = 2*np.pi*np.array(f)
     A, B, a, b, Aw, taoD = p[0], p[1], p[2],p[3],p[4], p[5]
-    Rpore = A
-    Rct = (A+B)/a
-    Cdl = b/(A+B)
+    _, Rpore, Rct, Cdl = get_pore_params(A,B,a,b)
     i0 = []
     i1 = []
     sqrt_term = np.sqrt(1j*omega*taoD)
@@ -612,6 +608,145 @@ def TDS(p, f):
 
 
 #Duplicates for Notebook Only
+@element(num_params=6, units=["Ohm-m^2", "Ohm-m^2", "", "sec","m^2","s"])
+def TDPP(p, f):
+    """A macrohomogeneous porous electrode model from Paasch et al. [1]
+
+    Notes
+    -----
+    .. math::
+
+        Z = A\\frac{\\coth{\\beta}}{\\beta} + B\\frac{1}{\\beta\\sinh{\\beta}}
+
+    where
+
+    .. math::
+
+        A = d\\frac{\\rho_1^2 + \\rho_2^2}{\\rho_1 + \\rho_2} \\quad
+        B = d\\frac{2 \\rho_1 \\rho_2}{\\rho_1 + \\rho_2}
+
+    and
+
+    .. math::
+        \\beta = (a + j \\omega b)^{1/2} \\quad
+        a = \\frac{k d^2}{K} \\quad b = \\frac{d^2}{K}
+
+
+    In the common case of low resistivity electrodes, setting B = 0 simplifies
+    the system to one term. 
+    
+    >> Z = \frac{A}{\beta \cdot \tanh(\beta)}
+
+    This is identical to the result of Ji et al. [2] in Eq. 35.
+
+    [1] G. Paasch, K. Micka, and P. Gersdorf,
+    Electrochimica Acta, 38, 2653–2662 (1993)
+    `doi: 10.1016/0013-4686(93)85083-B
+    <https://doi.org/10.1016/0013-4686(93)85083-B>`_.
+
+    [2] Y. Ji and D. T. Schwartz, 
+    J. Electrochem. Soc., 170, 123511 (2023)
+    `doi: 10.1149/1945-7111/ad15ca
+    <https://doi.org/10.1149/1945-7111/ad15ca>`_.
+    
+    EIS: A macrohomogeneous porous electrode model with planar diffusion 
+    Planar
+
+    """
+    omega = 2*np.pi*np.array(f)
+    A, B, a, b, Aw, taoD = p[0], p[1], p[2],p[3],p[4], p[5]
+    _, Rpore, Rct, Cdl = get_pore_params2(A,B,a,b)
+
+    Zd = Aw / (np.tanh(np.sqrt(1j*omega*taoD)) * np.sqrt(1j*omega*taoD))
+    beta = (1j*omega*Cdl*Rpore+Rpore/(Zd+Rct))**(1/2)
+    
+    sinh = []
+    for x in beta:
+        if x < 100:
+            sinh.append(np.sinh(x))
+        else:
+            sinh.append(1e10)
+    
+    Z = A / (beta * np.tanh(beta)) + B / (beta * np.array(sinh))
+
+    return Z
+
+@element(num_params=6, units=["Ohm-m^2", "Ohm-m^2", "", "sec","m^2","s"])
+def TDCC(p, f):
+    """ 
+    Notes
+    -----
+    .. math::
+
+        Z = A\\frac{\\coth{\\beta}}{\\beta} + B\\frac{1}{\\beta\\sinh{\\beta}}
+
+    where
+
+    .. math::
+
+        A = d\\frac{\\rho_1^2 + \\rho_2^2}{\\rho_1 + \\rho_2} \\quad
+        B = d\\frac{2 \\rho_1 \\rho_2}{\\rho_1 + \\rho_2}
+
+    and
+
+    .. math::
+        \\beta = (a + j \\omega b)^{1/2} \\quad
+        a = \\frac{k d^2}{K} \\quad b = \\frac{d^2}{K}
+
+
+    In the common case of low resistivity electrodes, setting B = 0 simplifies
+    the system to one term. 
+    
+    >> Z = \frac{A}{\beta \cdot \tanh(\beta)}
+
+    This is identical to the result of Ji et al. [2] in Eq. 35.
+
+    [1] G. Paasch, K. Micka, and P. Gersdorf,
+    Electrochimica Acta, 38, 2653–2662 (1993)
+    `doi: 10.1016/0013-4686(93)85083-B
+    <https://doi.org/10.1016/0013-4686(93)85083-B>`_.
+
+    [2] Y. Ji and D. T. Schwartz, 
+    J. Electrochem. Soc., 170, 123511 (2023)
+    `doi: 10.1149/1945-7111/ad15ca
+    <https://doi.org/10.1149/1945-7111/ad15ca>`_.
+    
+    EIS: A macrohomogeneous porous electrode model with cylindrical diffusion
+    # A=Rpore
+    # B=Rct
+    # a=Cdl
+    # b=Aw
+    # c=taoD
+    """
+    omega = 2*np.pi*np.array(f)
+    A, B, a, b, Aw, taoD = p[0], p[1], p[2],p[3],p[4], p[5]
+    _, Rpore, Rct, Cdl = get_pore_params2(A,B,a,b)
+    i0 = []
+    i1 = []
+    sqrt_term = np.sqrt(1j*omega*taoD)
+    
+    for x in sqrt_term:
+        if x < 100:
+            i0.append(iv(0,x))
+            i1.append(iv(1,x))
+        else:
+            i0.append(1e20)
+            i1.append(1e20)
+            
+    Zd = Aw*np.array(i0)/((sqrt_term)*np.array(i1))
+    beta = (1j*omega*Rpore*Cdl+Rpore/(Zd+Rct))**(1/2)
+    
+    sinh = []
+    for x in beta:
+        if x < 100:
+            sinh.append(np.sinh(x))
+        else:
+            sinh.append(1e10)
+            
+    Z = A / (beta * np.tanh(beta)) + B / (beta * np.array(sinh))
+    return Z
+
+
 @element(num_params=6, units=["Ohm-m^2", "Ohm-m^2", "", "sec","m^2","s"]) #TODO: delete when done
 def TDSS(p, f):
     
@@ -675,6 +810,7 @@ def TDSS(p, f):
     
     Z = A / (beta * np.tanh(beta)) + B / (beta * np.array(sinh))
     return Z
+
 
 
 def get_pore_params(A,B,a,b): #Analytical Method (more exact)
